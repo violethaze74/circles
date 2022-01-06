@@ -36,14 +36,17 @@ use ArtificialOwl\MySmallPhpTools\Traits\Nextcloud\nc22\TNC22Logger;
 use OCA\Circles\Db\CircleRequest;
 use OCA\Circles\Db\MemberRequest;
 use OCA\Circles\Db\MembershipRequest;
+use OCA\Circles\Exceptions\CircleNotFoundException;
 use OCA\Circles\Exceptions\FederatedUserNotFoundException;
 use OCA\Circles\Exceptions\MembershipNotFoundException;
 use OCA\Circles\Exceptions\OwnerNotFoundException;
 use OCA\Circles\Exceptions\RequestBuilderException;
+use OCA\Circles\IFederatedUser;
 use OCA\Circles\Model\Circle;
 use OCA\Circles\Model\FederatedUser;
 use OCA\Circles\Model\Member;
 use OCA\Circles\Model\Membership;
+use OCP\Share\IManager;
 
 /**
  * Class MembershipService
@@ -53,6 +56,9 @@ use OCA\Circles\Model\Membership;
 class MembershipService {
 	use TNC22Logger;
 
+
+	/** @var IManager */
+	private $shareManager;
 
 	/** @var MembershipRequest */
 	private $membershipRequest;
@@ -73,6 +79,7 @@ class MembershipService {
 	/**
 	 * MembershipService constructor.
 	 *
+	 * @param IManager $shareManager
 	 * @param MembershipRequest $membershipRequest
 	 * @param CircleRequest $circleRequest
 	 * @param MemberRequest $memberRequest
@@ -80,12 +87,14 @@ class MembershipService {
 	 * @param OutputService $outputService
 	 */
 	public function __construct(
+		IManager $shareManager,
 		MembershipRequest $membershipRequest,
 		CircleRequest $circleRequest,
 		MemberRequest $memberRequest,
 		EventService $eventService,
 		OutputService $outputService
 	) {
+		$this->shareManager = $shareManager;
 		$this->membershipRequest = $membershipRequest;
 		$this->circleRequest = $circleRequest;
 		$this->memberRequest = $memberRequest;
@@ -384,5 +393,44 @@ class MembershipService {
 		}
 
 		throw new ItemNotFoundException();
+	}
+
+
+	/**
+	 * based on Core Configuration, limit new members to shareGroupMembersOnly
+	 * returns false if the new member is good to go.
+	 *
+	 * @param FederatedUser $federatedUser
+	 * @param Circle $circle
+	 *
+	 * @return bool
+	 * @throws RequestBuilderException
+	 */
+	public function limitToGroupMembersOnly(IFederatedUser $federatedUser, Circle $circle): bool {
+		if (!$this->shareManager->shareWithGroupMembersOnly()) {
+			return false;
+		}
+
+		$memberMemberships = array_map(function (Membership $membership): string {
+			return $membership->getCircleId();
+		}, $federatedUser->getMemberships());
+		$ownerMemberships = array_map(function (Membership $membership): string {
+			return $membership->getCircleId();
+		}, $circle->getOwner()->getMemberships());
+
+		// we compare list of circles both (future member & owner) belongs to and check that at least one
+		// of those Circles is based on a Nextcloud Group.
+		foreach (array_intersect($memberMemberships, $ownerMemberships) as $circleId) {
+			try {
+				$groupCircle = $this->circleRequest->getCircle($circleId);
+				if ($groupCircle->getSource() === Member::TYPE_GROUP) {
+					return false;
+				}
+			} catch (CircleNotFoundException $e) {
+				continue;
+			}
+		}
+
+		return true;
 	}
 }
