@@ -113,12 +113,15 @@ class PreparingShareSendMail implements IEventListener {
 	 * @throws UnknownRemoteException
 	 */
 	public function handle(Event $event): void {
-		if (!$event instanceof PreparingFileShareEvent
-			|| !$this->configService->enforcePasswordOnSharedFile()) {
+		if (!$event instanceof PreparingFileShareEvent) {
 			return;
 		}
 
 		$circle = $event->getCircle();
+		if (!$this->configService->enforcePasswordOnSharedFile($circle)) {
+			return;
+		}
+
 		$federatedEvent = $event->getFederatedEvent();
 		$clearPasswords = $federatedEvent->getInternal()->gArray('clearPasswords');
 		$hashedPasswords = $federatedEvent->getParams()->gArray('hashedPasswords');

@@ -57,6 +57,7 @@ use OCA\Circles\FederatedItems\CircleDestroy;
 use OCA\Circles\FederatedItems\CircleEdit;
 use OCA\Circles\FederatedItems\CircleJoin;
 use OCA\Circles\FederatedItems\CircleLeave;
+use OCA\Circles\FederatedItems\CircleSetting;
 use OCA\Circles\FederatedItems\CircleSettings;
 use OCA\Circles\IEntity;
 use OCA\Circles\IFederatedUser;
@@ -69,12 +70,9 @@ use OCA\Circles\Model\Probes\CircleProbe;
 use OCA\Circles\Model\Probes\MemberProbe;
 use OCA\Circles\StatusCode;
 use OCP\IL10N;
+use OCP\Security\IHasher;
 
-/**
- * Class CircleService
- *
- * @package OCA\Circles\Service
- */
+
 class CircleService {
 	use TArrayTools;
 	use TStringTools;
@@ -83,6 +81,9 @@ class CircleService {
 
 	/** @var IL10N */
 	private $l10n;
+
+	/** @var IHasher */
+	private $hasher;
 
 	/** @var CircleRequest */
 	private $circleRequest;
@@ -107,8 +108,8 @@ class CircleService {
 
 
 	/**
-	 * CircleService constructor.
-	 *
+	 * @param IL10N $l10n
+	 * @param IHasher $hasher
 	 * @param CircleRequest $circleRequest
 	 * @param MemberRequest $memberRequest
 	 * @param RemoteStreamService $remoteStreamService
@@ -119,6 +120,7 @@ class CircleService {
 	 */
 	public function __construct(
 		IL10N $l10n,
+		IHasher $hasher,
 		CircleRequest $circleRequest,
 		MemberRequest $memberRequest,
 		RemoteStreamService $remoteStreamService,
@@ -128,6 +130,7 @@ class CircleService {
 		ConfigService $configService
 	) {
 		$this->l10n = $l10n;
+		$this->hasher = $hasher;
 		$this->circleRequest = $circleRequest;
 		$this->memberRequest = $memberRequest;
 		$this->remoteStreamService = $remoteStreamService;
@@ -265,6 +268,51 @@ class CircleService {
 		$event = new FederatedEvent(CircleConfig::class);
 		$event->setCircle($circle);
 		$event->setParams(new SimpleDataStore(['config' => $config]));
+
+		$this->federatedEventService->newEvent($event);
+
+		return $event->getOutcome();
+	}
+
+
+	/**
+	 * if $value is null, setting is unset
+	 *
+	 * @param string $circleId
+	 * @param string $setting
+	 * @param string|null $value
+	 *
+	 * @return array
+	 * @throws CircleNotFoundException
+	 * @throws FederatedEventException
+	 * @throws FederatedItemException
+	 * @throws InitiatorNotConfirmedException
+	 * @throws InitiatorNotFoundException
+	 * @throws OwnerNotFoundException
+	 * @throws RemoteInstanceException
+	 * @throws RemoteNotFoundException
+	 * @throws RemoteResourceNotFoundException
+	 * @throws RequestBuilderException
+	 * @throws UnknownRemoteException
+	 */
+	public function updateSetting(string $circleId, string $setting, ?string $value): array {
+		$circle = $this->getCircle($circleId);
+
+		if (strtolower($setting) === 'password_single') {
+			$value = $this->hasher->hash($value);
+		}
+
+		$event = new FederatedEvent(CircleSetting::class);
+		$event->setCircle($circle);
+		$event->setParams(
+			new SimpleDataStore(
+				[
+					'setting' => $setting,
+					'value' => $value,
+					'unset' => is_null($value)
+				]
+			)
+		);
 
 		$this->federatedEventService->newEvent($event);
 

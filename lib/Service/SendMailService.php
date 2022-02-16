@@ -132,7 +132,7 @@ class SendMailService {
 			} catch (Exception $e) {
 			}
 
-			$this->sendMailPassword($author, $circle->getDisplayName(), $mail, $password);
+			$this->sendMailPassword($circle, $author, $mail, $password);
 		}
 	}
 
@@ -219,12 +219,12 @@ class SendMailService {
 	 * @param string $password
 	 */
 	private function sendMailPassword(
+		Circle $circle,
 		string $author,
-		string $circleName,
 		string $email,
 		string $password
 	): void {
-		if (!$this->configService->enforcePasswordOnSharedFile() || $password === '') {
+		if (!$this->configService->sendPasswordByMail($circle) || $password === '') {
 			return;
 		}
 

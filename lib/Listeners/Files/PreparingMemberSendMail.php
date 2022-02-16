@@ -41,6 +41,7 @@ use OCA\Circles\Exceptions\RemoteNotFoundException;
 use OCA\Circles\Exceptions\RemoteResourceNotFoundException;
 use OCA\Circles\Exceptions\RequestBuilderException;
 use OCA\Circles\Exceptions\UnknownRemoteException;
+use OCA\Circles\Model\Circle;
 use OCA\Circles\Model\Member;
 use OCA\Circles\Service\ConfigService;
 use OCA\Circles\Service\ContactService;
@@ -113,8 +114,12 @@ class PreparingMemberSendMail implements IEventListener {
 	 * @throws UnknownRemoteException
 	 */
 	public function handle(Event $event): void {
-		if (!$event instanceof PreparingCircleMemberEvent
-			|| !$this->configService->enforcePasswordOnSharedFile()) {
+		if (!$event instanceof PreparingCircleMemberEvent) {
+			return;
+		}
+
+		$circle = $event->getCircle();
+		if (!$this->configService->enforcePasswordOnSharedFile($circle)) {
 			return;
 		}
 
@@ -137,12 +142,32 @@ class PreparingMemberSendMail implements IEventListener {
 				continue;
 			}
 
-			$clearPassword = $this->token(14);
+			[$clearPassword, $hashedPassword] = $this->getPassword($circle);
 			$clearPasswords[$member->getSingleId()] = $clearPassword;
-			$hashedPasswords[$member->getSingleId()] = $this->hasher->hash($clearPassword);
+			$hashedPasswords[$member->getSingleId()] = $hashedPassword;
 		}
 
 		$federatedEvent->getInternal()->aArray('clearPasswords', $clearPasswords);
 		$federatedEvent->getParams()->aArray('hashedPasswords', $hashedPasswords);
+	}
+
+
+	/**
+	 * @param Circle $circle
+	 *
+	 * @return array
+	 */
+	private function getPassword(Circle $circle): array {
+		if ($this->configService->sendPasswordByMail($circle)) {
+			$hashedPassword = $this->get('password_single', $circle->getSettings());
+			if ($hashedPassword !== '') {
+				return ['', $hashedPassword];
+			}
+		}
+
+		$clearPassword = $this->token(14);
+		$hashedPassword = $this->hasher->hash($clearPassword);
+
+		return [$clearPassword, $hashedPassword];
 	}
 }
